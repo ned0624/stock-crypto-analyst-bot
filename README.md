@@ -20,14 +20,14 @@
 
 ```
 ┌─────────────────────────────────────┐
-│           Client Interfaces          │
+│           Client Interfaces         │
 │   LINE Bot  │  Claude Desktop MCP   │
 └──────┬──────┴──────────┬────────────┘
        │                 │
        ▼                 ▼
 ┌─────────────────────────────────────┐
 │         linebot_agent.py            │
-│     FastAPI webhook handler          │
+│     FastAPI webhook handler         │
 │  (Vertex AI / Claude API summary)   │
 └──────────────┬──────────────────────┘
                │
@@ -126,16 +126,11 @@ pip install -r requirements.txt
 
 ### 3. Set environment variables
 
-Create a `.env` file:
+Edit `cloudbuild.linebot.yaml`, fill in your credentials in `--set-env-vars`:
 
-```env
-LINE_CHANNEL_SECRET=your_line_channel_secret
-LINE_CHANNEL_ACCESS_TOKEN=your_line_access_token
-ANTHROPIC_API_KEY=your_anthropic_api_key
-GEMINI_PROJECT=your_gcp_project_id
-GEMINI_LOCATION=us-central1
-AI_MODE=vertex   # vertex | claude_api | no_ai
-```
+\```yaml
+- --set-env-vars=LINE_CHANNEL_SECRET=your_secret,LINE_CHANNEL_ACCESS_TOKEN=your_token,ANTHROPIC_API_KEY=your_key
+\```
 
 ### 4. Run locally
 
@@ -181,7 +176,7 @@ Add to your `claude_desktop_config.json`:
 
 ---
 
-## LINE Bot Usage
+## LINE Bot Commands
 
 | Input | Description |
 |---|---|
