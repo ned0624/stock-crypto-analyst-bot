@@ -1,0 +1,37 @@
+# 環境變數（最重要！API Key 絕對不能推）
+.env
+.env.local
+*.env
+
+# GCP 金鑰
+*.json
+service-account*.json
+credentials*.json
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# Node.js（如果有用）
+node_modules/
+npm-debug.log
+
+# 系統檔
+.DS_Store
+Thumbs.db
+
+# IDE 設定
+.vscode/
+.idea/
+
+# Log 檔
+*.log
+logs/
+
+modules/
+claude_api_key.txt
+deploy.txt
+Dockerfile

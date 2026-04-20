@@ -1,0 +1,16 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-f', 'Dockerfile.linebot', '-t', 'gcr.io/$PROJECT_ID/line-bot-agent', '.']
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/line-bot-agent']
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - line-bot-agent
+      - --image=gcr.io/$PROJECT_ID/line-bot-agent
+      - --platform=managed
+      - --region=asia-east1
+      - --allow-unauthenticated
+      - --set-env-vars=LINE_CHANNEL_SECRET=你的secret,LINE_CHANNEL_ACCESS_TOKEN=你的token,ANTHROPIC_API_KEY=你的key
