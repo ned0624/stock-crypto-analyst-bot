@@ -230,8 +230,7 @@ def format_stock_data(stock_id: str, data: dict) -> str:
         if chip.get("foreign_si_net"):
             lines.append(f"　外資自營：{chip.get('foreign_si_net', 0):+,} 張")
         lines.append(f"　投信：{chip.get('trust_net', 0):+,} 張")
-        lines.append(f"　自營（自行）：{chip.get('dealer_self_net', 0):+,} 張")
-        lines.append(f"　自營（避險）：{chip.get('dealer_hedge_net', 0):+,} 張")
+        lines.append(f"　自營商：{chip.get('dealer_net', 0):+,} 張")
         lines.append(f"　三大法人合計：{chip.get('total_net', 0):+,} 張")
         lines.append("")
 

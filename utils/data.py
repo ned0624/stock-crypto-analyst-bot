@@ -131,37 +131,49 @@ def get_twse_chip_data(stock_id: str) -> dict:
 
 
 def get_margin_trading(stock_id: str) -> dict:
-    try:
-        for days_back in range(0, 10):
-            date = datetime.now() - timedelta(days=days_back)
-            if date.weekday() >= 5:
-                print(f"[margin] 跳過週末：{date.strftime('%Y%m%d')}")
-                continue
-            date_str = date.strftime("%Y%m%d")
-            print(f"[margin] 嘗試日期：{date_str}")
-            url = f"https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={date_str}&selectType=ALL&response=json"
-            resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-            data = resp.json()
-            print(f"[margin] stat={data.get('stat')}, rows={len(data.get('data', []))}")
+    headers = {"User-Agent": "Mozilla/5.0"}
 
-            if data.get("stat") == "OK" and data.get("data"):
-                for row in data["data"]:
-                    if row[0] == stock_id:
-                        print(f"[margin] 找到 {stock_id}")
-                        return {
-                            "date": date_str,
-                            "margin_buy": int(row[3].replace(",", "")),
-                            "margin_sell": int(row[4].replace(",", "")),
-                            "margin_balance": int(row[6].replace(",", "")),
-                            "short_sell": int(row[9].replace(",", "")),
-                            "short_buy": int(row[10].replace(",", "")),
-                            "short_balance": int(row[12].replace(",", "")),
-                        }
-                print(f"[margin] {date_str} 有資料但找不到 {stock_id}")
-        return {}
-    except Exception as e:
-        print(f"[margin 錯誤] {str(e)}")
-        return {}
+    for days_back in range(0, 10):
+        date = datetime.now() - timedelta(days=days_back)
+        if date.weekday() >= 5:
+            continue
+        date_str = date.strftime("%Y%m%d")
+
+        url = f"https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={date_str}&selectType=ALL&response=csv"
+        try:
+            r = requests.get(url, timeout=10, headers=headers)
+            if r.status_code != 200 or len(r.content) < 100:
+                continue
+
+            text = r.content.decode("big5", errors="ignore")
+
+            for line in text.splitlines():
+                # 去掉引號和等號，取得純文字
+                clean = line.replace('="', '"').strip()
+                cols = [c.strip().strip('"') for c in clean.split(",")]
+
+                if cols[0] == stock_id:
+                    def to_int(s):
+                        try:
+                            return int(s.replace(",", ""))
+                        except:
+                            return 0
+                        
+                    margin_y = to_int(cols[5])  # 融資前日餘額
+                    margin_t = to_int(cols[6])  # 融資今日餘額
+                    short_sell_y = to_int(cols[11]) # 融券前日餘額
+                    short_sell_t = to_int(cols[12]) # 融券今日餘額
+
+                    return {
+                        "date": date_str,                        
+                        "margin_balance": margin_t - margin_y,
+                        "short_balance":  short_sell_t - short_sell_y,
+                    }
+        except Exception as e:
+            print(f"[margin 錯誤] {str(e)}")
+            continue
+
+    return {}
 
 
 def get_market_summary() -> dict:

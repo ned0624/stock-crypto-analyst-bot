@@ -82,7 +82,7 @@ stock-crypto-analyst-bot/
 | GET | `/stock/{stock_id}/technical` | RSI, MACD, KD, MA5/20/60 |
 | GET | `/stock/{stock_id}/signal` | Technical signals & score |
 | GET | `/stock/{stock_id}/chip` | Institutional investors (foreign, trust, dealer) |
-| GET | `/stock/{stock_id}/margin` | Margin trading balance |
+| GET | `/stock/{stock_id}/margin` | Margin trading (融資) & short selling (融券) balance |
 | GET | `/stock/{stock_id}/support_resistance` | Support & resistance levels |
 | GET | `/stock/{stock_id}/volume_analysis` | Volume analysis |
 | GET | `/stock/{stock_id}/valuation` | PE, PB, ROE, profit margin |
