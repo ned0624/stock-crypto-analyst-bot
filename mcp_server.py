@@ -9,12 +9,6 @@ STOCK_API_BASE = "https://stock-api-618661878536.asia-east1.run.app"
 app = Server("stock-analysis")
 
 # ── 定義工具 ──────────────────────────────────────────────────────────────────
-SOURCE = "claude_desktop"
-
-@app.call_tool()
-async def call_tool(name: str, arguments: dict) -> list[TextContent]:
-    print(f"[{SOURCE}] 呼叫工具：{name}")
-
 @app.list_tools()
 async def list_tools() -> list[Tool]:
     return [

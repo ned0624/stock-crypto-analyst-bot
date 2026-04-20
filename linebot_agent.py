@@ -15,7 +15,7 @@ from vertexai.generative_models import GenerativeModel
 import asyncio
 
 # ── 設定 ──────────────────────────────────────────────────────────────────────
-LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "d2cbbdacb486377686d82e2d7cd2c84b")
+LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET", "")
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 GEMINI_PROJECT = os.getenv("GEMINI_PROJECT", "stock-analysis-493612")

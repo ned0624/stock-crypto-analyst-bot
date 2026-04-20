@@ -114,7 +114,7 @@ stock-crypto-analyst-bot/
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/your-username/stock-crypto-analyst-bot.git
+git clone https://github.com/ned0624/stock-crypto-analyst-bot.git
 cd stock-crypto-analyst-bot
 ```
 
