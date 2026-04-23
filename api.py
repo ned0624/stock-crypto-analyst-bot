@@ -133,8 +133,6 @@ def stock_margin(stock_id: str):
 def market():
     return JSONResponse(clean(get_market_summary()))
 
-# ── Support & Resistance ──────────────────────────────────────────────────────
-
 @app.get("/stock/{stock_id}/support_resistance")
 def support_resistance(stock_id: str):
     try:
@@ -188,8 +186,6 @@ def support_resistance(stock_id: str):
         import traceback
         print(f"[support_resistance 錯誤] {traceback.format_exc()}")
         return JSONResponse({"error": str(e)})
-
-# ── Volume Analysis ───────────────────────────────────────────────────────────
 
 @app.get("/stock/{stock_id}/volume_analysis")
 def volume_analysis(stock_id: str):
@@ -265,8 +261,6 @@ def volume_analysis(stock_id: str):
         return JSONResponse({"error": str(e)})
 
 
-# ── Valuation ─────────────────────────────────────────────────────────────────
-
 @app.get("/stock/{stock_id}/valuation")
 def valuation(stock_id: str):
     from utils.data import get_tw_stock_symbol
@@ -318,8 +312,6 @@ def valuation(stock_id: str):
     except Exception as e:
         return JSONResponse({"error": str(e)})
 
-
-# ── Financials ────────────────────────────────────────────────────────────────
 
 @app.get("/stock/{stock_id}/financials")
 def financials(stock_id: str):
@@ -374,8 +366,6 @@ def financials(stock_id: str):
     except Exception as e:
         return JSONResponse({"error": str(e)})
 
-
-# ── Revenue ───────────────────────────────────────────────────────────────────
 
 @app.get("/stock/{stock_id}/revenue")
 def revenue(stock_id: str):
