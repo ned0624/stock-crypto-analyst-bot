@@ -18,33 +18,63 @@ def get_stock_info(stock_id: str) -> dict:
     symbol = get_tw_stock_symbol(stock_id)
     try:
         ticker = yf.Ticker(symbol)
-        info = ticker.info
-        hist = ticker.history(period="5d")
+        hist = ticker.history(period="5d", timeout=10)  # ← 加 timeout
         if hist.empty:
             return {"error": f"找不到股票 {stock_id}"}
-        current_price = hist["Close"].iloc[-1]
-        prev_price = hist["Close"].iloc[-2] if len(hist) > 1 else current_price
+
+        current_price = float(hist["Close"].iloc[-1])
+        prev_price = float(hist["Close"].iloc[-2]) if len(hist) > 1 else current_price
         change = current_price - prev_price
         change_pct = (change / prev_price) * 100
+
+        # info 可能很慢，用 timeout 保護
+        try:
+            info = ticker.fast_info  # ← 改用 fast_info，比 info 快很多
+            name = stock_id
+            market_cap = getattr(info, 'market_cap', 0) or 0
+            pe_ratio = getattr(info, 'pe_ratio', None)
+            dividend_yield = None
+            week52_high = getattr(info, 'year_high', None)
+            week52_low = getattr(info, 'year_low', None)
+        except Exception:
+            name = stock_id
+            market_cap = 0
+            pe_ratio = None
+            dividend_yield = None
+            week52_high = None
+            week52_low = None
+
+        # TWSE 即時 API 補名稱
+        try:
+            r = requests.get(
+                f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_{stock_id}.tw",
+                headers={"User-Agent": "Mozilla/5.0"}, timeout=5
+            )
+            msg = r.json().get("msgArray", [])
+            if msg:
+                name = msg[0].get("n", stock_id)
+        except Exception:
+            pass
+
         return {
             "stock_id": stock_id,
             "symbol": symbol,
-            "name": info.get("longName", info.get("shortName", stock_id)),
+            "name": name,
             "price": round(current_price, 2),
             "change": round(change, 2),
             "change_pct": round(change_pct, 2),
-            "volume": hist["Volume"].iloc[-1],
-            "high": hist["High"].iloc[-1],
-            "low": hist["Low"].iloc[-1],
-            "open": hist["Open"].iloc[-1],
-            "market_cap": info.get("marketCap", 0),
-            "pe_ratio": info.get("trailingPE", None),
-            "dividend_yield": info.get("dividendYield", None),
-            "52w_high": info.get("fiftyTwoWeekHigh", None),
-            "52w_low": info.get("fiftyTwoWeekLow", None),
-            "revenue_growth": info.get("revenueGrowth", None),
-            "sector": info.get("sector", ""),
-            "industry": info.get("industry", ""),
+            "volume": int(hist["Volume"].iloc[-1]),
+            "high": float(hist["High"].iloc[-1]),
+            "low": float(hist["Low"].iloc[-1]),
+            "open": float(hist["Open"].iloc[-1]),
+            "market_cap": market_cap,
+            "pe_ratio": pe_ratio,
+            "dividend_yield": dividend_yield,
+            "52w_high": week52_high,
+            "52w_low": week52_low,
+            "revenue_growth": None,
+            "sector": "",
+            "industry": "",
         }
     except Exception as e:
         return {"error": str(e)}
