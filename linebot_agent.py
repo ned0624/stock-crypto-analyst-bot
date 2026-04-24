@@ -522,7 +522,7 @@ def ai_summary(raw: dict, input_type: str, mode: str) -> str:
             "claude_api": "🟠 Claude Haiku 4.5",
             "no_ai": "📊 純資料模式",
         }
-        return f"\n🤖 AI 總結\n{result}\n\n─────────────\n{mode_label.get(mode, mode)}"
+        return f"\n🤖 AI 總結\n{result}\n\n{mode_label.get(mode, mode)}"
     return ""
 
 # ── Line 回覆 ─────────────────────────────────────────────────────────────────
@@ -714,6 +714,7 @@ def process_and_reply(user_msg: str, reply_token: str, user_id: str):
         mode = "no_ai"
     print(f"[模式] {mode}")
 
+    MAX_LEN = 4900
     try:
         cmd_reply = handle_command(user_id, user_msg, reply_token)
         if cmd_reply == "HANDLED":
@@ -742,6 +743,8 @@ def process_and_reply(user_msg: str, reply_token: str, user_id: str):
                     summary = future_ai.result()  # 不設 timeout
 
                 combined = f"{formatted}\n\n{summary}" if summary else formatted
+                if len(combined) > MAX_LEN:
+                    summary = summary[:MAX_LEN] + "\n\n⚠️ 內容過長，已截斷"
                 reply_or_push(reply_token, user_id, text=combined)
         
         elif input_type == "us_stock":
