@@ -22,6 +22,15 @@ GEMINI_PROJECT = os.getenv("GEMINI_PROJECT", "stock-analysis-493612")
 GEMINI_LOCATION = os.getenv("GEMINI_LOCATION", "us-central1")
 STOCK_API_BASE = "https://stock-api-618661878536.asia-east1.run.app"
 DEFAULT_MODE = os.getenv("AI_MODE", "vertex")
+# 全域初始化 Vertex AI model
+_vertex_model = None
+
+def get_vertex_model():
+    global _vertex_model
+    if _vertex_model is None:
+        vertexai.init(project=GEMINI_PROJECT, location=GEMINI_LOCATION)
+        _vertex_model = GenerativeModel("gemini-2.5-flash-lite")
+    return _vertex_model
 
 app = FastAPI()
 
@@ -246,8 +255,10 @@ def format_stock_data(stock_id: str, data: dict) -> str:
     if sr and "error" not in sr:
         res = sr.get("resistance", {})
         sup = sr.get("support", {})
-        if res.get("r1") and sup.get("s1"):
-            lines.append(f"📌 壓力：{res.get('r1','N/A')}　支撐：{sup.get('s1','N/A')}")
+        r1 = res.get("r1")
+        s1 = sup.get("s1")
+        if r1 and s1:
+            lines.append(f"📌 壓力：{round(r1, 2)}　支撐：{round(s1, 2)}")
             lines.append("")
 
     # 量價
@@ -483,7 +494,7 @@ def call_claude(prompt: str) -> str:
 def call_vertex(prompt: str) -> str:
     for attempt in range(3):
         try:
-            model = GenerativeModel("gemini-2.5-flash-lite")
+            model = get_vertex_model()  # ← 改這行
             response = model.generate_content(prompt)
             return response.text
         except Exception as e:
