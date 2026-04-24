@@ -49,11 +49,11 @@ def identify_input(msg: str) -> tuple:
     upper = clean_msg.upper()
 
     # 台股代號（4-6位純數字）
-    if re.fullmatch(r'\d{4,6}', clean_msg):
+    if re.fullmatch(r'\d{4,6}[A-Za-z]?', clean_msg):
         return ('stock', clean_msg)
 
     # 數字在句子中
-    match = re.search(r'\b(\d{4,6})\b', clean_msg)
+    match = re.search(r'\b(\d{4,6}[A-Za-z]?)\b', clean_msg)
     if match:
         return ('stock', match.group(1))
 
