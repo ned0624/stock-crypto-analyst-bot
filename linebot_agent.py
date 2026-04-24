@@ -509,7 +509,7 @@ def ai_summary(raw: dict, input_type: str, mode: str) -> str:
     prompt = f"""根據以下{type_name}資料給出2-3句簡短總結和操作建議。
 不用重複資料數字，只給結論和建議。
 不能使用markdown符號，用emoji，繁體中文。
-
+【重要】只能回覆2-3句話，總字數不超過150字，絕對不能超過。
 資料：{json.dumps(raw, ensure_ascii=False)}"""
 
     print(f"[AI Summary] 開始，模式：{mode}")
@@ -744,7 +744,7 @@ def process_and_reply(user_msg: str, reply_token: str, user_id: str):
 
                 combined = f"{formatted}\n\n{summary}" if summary else formatted
                 if len(combined) > MAX_LEN:
-                    summary = summary[:MAX_LEN] + "\n\n⚠️ 內容過長，已截斷"
+                    combined = combined[:MAX_LEN] + "\n\n⚠️ 內容過長，已截斷"
                 reply_or_push(reply_token, user_id, text=combined)
         
         elif input_type == "us_stock":
