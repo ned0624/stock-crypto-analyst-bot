@@ -6,12 +6,25 @@ from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings("ignore")
 
+_symbol_cache: dict = {}
 
 def get_tw_stock_symbol(stock_id: str) -> str:
-    stock_id = stock_id.strip()
-    if not stock_id.endswith(".TW") and not stock_id.endswith(".TWO"):
-        return f"{stock_id}.TW"
-    return stock_id
+    if stock_id in _symbol_cache:
+        return _symbol_cache[stock_id]
+    
+    for suffix in [".TW", ".TWO"]:
+        symbol = f"{stock_id}{suffix}"
+        try:
+            hist = yf.Ticker(symbol).history(period="2d")
+            if not hist.empty:
+                _symbol_cache[stock_id] = symbol
+                return symbol
+        except Exception:
+            continue
+    
+    result = f"{stock_id}.TW"
+    _symbol_cache[stock_id] = result
+    return result
 
 
 def get_stock_info(stock_id: str) -> dict:
