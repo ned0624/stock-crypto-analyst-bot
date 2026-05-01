@@ -91,7 +91,7 @@ def identify_input(msg: str) -> tuple:
     return ('unknown', None)
 
 # ── 平行抓資料 ────────────────────────────────────────────────────────────────
-def fetch_url(url: str, timeout: int = 10) -> dict:
+def fetch_url(url: str, timeout: int = 15) -> dict:
     try:
         r = requests.get(url, timeout=timeout)
         print(f"[fetch] {url} → {r.status_code}")

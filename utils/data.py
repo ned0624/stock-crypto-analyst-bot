@@ -8,27 +8,39 @@ warnings.filterwarnings("ignore")
 
 _symbol_cache: dict = {}
 
-def get_tw_stock_symbol(stock_id: str) -> str:
+def get_tw_stock_symbol(stock_id: str) -> tuple:
+    """回傳 (symbol, market)，market 為 'TW' 或 'TWO'"""
+    stock_id = stock_id.strip()
+    
+    # 已有 suffix 的情況
+    if stock_id.endswith(".TWO"):
+        return stock_id, "TWO"
+    if stock_id.endswith(".TW"):
+        return stock_id, "TW"
+    
+    # 查快取
     if stock_id in _symbol_cache:
         return _symbol_cache[stock_id]
     
-    for suffix in [".TW", ".TWO"]:
+    # 試探 .TW 和 .TWO
+    for suffix, market in [(".TW", "TW"), (".TWO", "TWO")]:
         symbol = f"{stock_id}{suffix}"
         try:
             hist = yf.Ticker(symbol).history(period="2d")
             if not hist.empty:
-                _symbol_cache[stock_id] = symbol
-                return symbol
+                _symbol_cache[stock_id] = (symbol, market)
+                return symbol, market
         except Exception:
             continue
     
-    result = f"{stock_id}.TW"
+    # fallback
+    result = (f"{stock_id}.TW", "TW")
     _symbol_cache[stock_id] = result
     return result
 
 
 def get_stock_info(stock_id: str) -> dict:
-    symbol = get_tw_stock_symbol(stock_id)
+    symbol, market = get_tw_stock_symbol(stock_id)
     try:
         ticker = yf.Ticker(symbol)
         hist = ticker.history(period="5d", timeout=10)  # ← 加 timeout
@@ -59,8 +71,12 @@ def get_stock_info(stock_id: str) -> dict:
 
         # TWSE 即時 API 補名稱
         try:
+            if market == "TWO":
+                ex_ch = f"otc_{stock_id}.tw"
+            else:
+                ex_ch = f"tse_{stock_id}.tw"
             r = requests.get(
-                f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_{stock_id}.tw",
+                f"https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch={ex_ch}",
                 headers={"User-Agent": "Mozilla/5.0"}, timeout=5
             )
             msg = r.json().get("msgArray", [])
@@ -94,7 +110,7 @@ def get_stock_info(stock_id: str) -> dict:
 
 
 def get_stock_history(stock_id: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
-    symbol = get_tw_stock_symbol(stock_id)
+    symbol, _ = get_tw_stock_symbol(stock_id)
     try:
         ticker = yf.Ticker(symbol)
         df = ticker.history(period=period, interval=interval)
@@ -132,92 +148,117 @@ def get_technical_indicators(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def get_twse_chip_data(stock_id: str) -> dict:
+def get_twse_chip_data(stock_id: str, market: str = "TW") -> dict:
     try:
         for days_back in range(0, 10):
             date = datetime.now() - timedelta(days=days_back)
             if date.weekday() >= 5:
                 continue
             date_str = date.strftime("%Y%m%d")
-            url = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={date_str}&selectType=ALLBUT0999&response=json"
-            resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
-            data = resp.json()
 
-            if data.get("stat") == "OK" and data.get("data"):
-                result = {"date": date_str}
-                for row in data["data"]:
-                    if row[0] == stock_id:
-                        try:
+            if market == "TWO":
+                roc_date = f"{date.year - 1911}/{date.month:02d}/{date.day:02d}"
+                url = "https://www.tpex.org.tw/web/stock/3insti/daily_trade/3itrade_hedge_result.php"
+                params = {"l": "zh-tw", "se": "EW", "t": "D", "d": roc_date, "s": "0,asc"}
+                resp = requests.get(url, params=params, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                data = resp.json()
+                tables = data.get("tables", [])
+                rows = tables[0].get("data", []) if tables else []
+                if not rows:
+                    continue
+            else:
+                url = f"https://www.twse.com.tw/rwd/zh/fund/T86?date={date_str}&selectType=ALLBUT0999&response=json"
+                resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                data = resp.json()
+                if data.get("stat") != "OK" or not data.get("data"):
+                    continue
+                rows = data["data"]
+
+            for row in rows:
+                if row[0] == stock_id:
+                    try:
+                        if market == "TWO":
+                            def to_int_tpex(s):
+                                return int(str(s).replace(",", "").replace(" ", "")) // 1000
+                            return {
+                                "date": date_str,
+                                "foreign_net": to_int_tpex(row[4]),
+                                "trust_net":   to_int_tpex(row[13]),
+                                "dealer_net":  to_int_tpex(row[22]),
+                                "total_net":   to_int_tpex(row[23]),
+                            }
+                        else:
                             def to_int(s):
                                 return int(s.replace(",", "").replace(" ", "")) // 1000
-
-                            # 外資（外陸資 + 外資自營商）
-                            result["foreign_net"] = to_int(row[4])
-
-                            # 投信
-                            result["trust_net"] = to_int(row[10])  # 投信買賣超
-
-                            # 自營商
-                            result["dealer_net"] = to_int(row[11])
-
-                            # 三大法人合計
-                            result["total_net"] = to_int(row[18])  # 直接用官方合計
-
-                        except Exception as e:
-                            print(f"[chip 解析錯誤] {str(e)}, row={row}")
-                        break
-                return result
+                            return {
+                                "date": date_str,
+                                "foreign_net": to_int(row[4]),
+                                "trust_net":   to_int(row[10]),
+                                "dealer_net":  to_int(row[11]),
+                                "total_net":   to_int(row[18]),
+                            }
+                    except Exception as e:
+                        print(f"[chip 解析錯誤] {str(e)}, row={row}")
+                    break
 
         return {"error": "近10個交易日無資料"}
     except Exception as e:
         return {"error": str(e)}
 
 
-def get_margin_trading(stock_id: str) -> dict:
-    headers = {"User-Agent": "Mozilla/5.0"}
-
-    for days_back in range(0, 10):
-        date = datetime.now() - timedelta(days=days_back)
-        if date.weekday() >= 5:
-            continue
-        date_str = date.strftime("%Y%m%d")
-
-        url = f"https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={date_str}&selectType=ALL&response=csv"
-        try:
-            r = requests.get(url, timeout=10, headers=headers)
-            if r.status_code != 200 or len(r.content) < 100:
+def get_margin_trading(stock_id: str, market: str = "TW") -> dict:
+    try:
+        for days_back in range(0, 10):
+            date = datetime.now() - timedelta(days=days_back)
+            if date.weekday() >= 5:
                 continue
+            date_str = date.strftime("%Y%m%d")
 
-            text = r.content.decode("big5", errors="ignore")
+            if market == "TWO":
+                roc_date = f"{date.year - 1911}/{date.month:02d}/{date.day:02d}"
+                url = "https://www.tpex.org.tw/web/stock/margin_trading/margin_balance/margin_bal_result.php"
+                params = {"l": "zh-tw", "d": roc_date, "s": "0,asc"}
+                resp = requests.get(url, params=params, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                data = resp.json()
+                tables = data.get("tables", [])
+                rows = tables[0].get("data", []) if tables else []
+                if not rows:
+                    continue
+            else:
+                url = f"https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={date_str}&selectType=ALL&response=json"
+                resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                data = resp.json()
+                if data.get("stat") != "OK" or not data.get("data"):
+                    continue
+                rows = data["data"]
 
-            for line in text.splitlines():
-                # 去掉引號和等號，取得純文字
-                clean = line.replace('="', '"').strip()
-                cols = [c.strip().strip('"') for c in clean.split(",")]
+            for row in rows:
+                if row[0] == stock_id:
+                    if market == "TWO":
+                        return {
+                            "date": date_str,
+                            "margin_buy":     int(str(row[3]).replace(",", "")),
+                            "margin_sell":    int(str(row[4]).replace(",", "")),
+                            "margin_balance": int(str(row[6]).replace(",", "")),
+                            "short_sell":     int(str(row[11]).replace(",", "")),
+                            "short_buy":      int(str(row[12]).replace(",", "")),
+                            "short_balance":  int(str(row[14]).replace(",", "")),
+                        }
+                    else:
+                        return {
+                            "date": date_str,
+                            "margin_buy":     int(row[3].replace(",", "")),
+                            "margin_sell":    int(row[4].replace(",", "")),
+                            "margin_balance": int(row[6].replace(",", "")),
+                            "short_sell":     int(row[9].replace(",", "")),
+                            "short_buy":      int(row[10].replace(",", "")),
+                            "short_balance":  int(row[12].replace(",", "")),
+                        }
 
-                if cols[0] == stock_id:
-                    def to_int(s):
-                        try:
-                            return int(s.replace(",", ""))
-                        except:
-                            return 0
-                        
-                    margin_y = to_int(cols[5])  # 融資前日餘額
-                    margin_t = to_int(cols[6])  # 融資今日餘額
-                    short_sell_y = to_int(cols[11]) # 融券前日餘額
-                    short_sell_t = to_int(cols[12]) # 融券今日餘額
-
-                    return {
-                        "date": date_str,                        
-                        "margin_balance": margin_t - margin_y,
-                        "short_balance":  short_sell_t - short_sell_y,
-                    }
-        except Exception as e:
-            print(f"[margin 錯誤] {str(e)}")
-            continue
-
-    return {}
-
+        return {}
+    except Exception as e:
+        print(f"[margin 錯誤] {str(e)}")
+        return {}
 
 def get_market_summary() -> dict:
     try:

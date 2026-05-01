@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from utils.data import (
+    get_tw_stock_symbol,
     get_stock_info, get_stock_history,
     get_technical_indicators, get_twse_chip_data,
     get_margin_trading, get_market_summary, analyze_signals
@@ -123,11 +124,13 @@ def stock_signal(stock_id: str):
 
 @app.get("/stock/{stock_id}/chip")
 def stock_chip(stock_id: str):
-    return JSONResponse(clean(get_twse_chip_data(stock_id)))
+    symbol, market = get_tw_stock_symbol(stock_id)
+    return JSONResponse(clean(get_twse_chip_data(stock_id, market)))
 
 @app.get("/stock/{stock_id}/margin")
 def stock_margin(stock_id: str):
-    return JSONResponse(clean(get_margin_trading(stock_id)))
+    symbol, market = get_tw_stock_symbol(stock_id)
+    return JSONResponse(clean(get_margin_trading(stock_id, market)))
 
 @app.get("/market")
 def market():
@@ -263,9 +266,8 @@ def volume_analysis(stock_id: str):
 
 @app.get("/stock/{stock_id}/valuation")
 def valuation(stock_id: str):
-    from utils.data import get_tw_stock_symbol
     import yfinance as yf
-    symbol = get_tw_stock_symbol(stock_id)
+    symbol, _ = get_tw_stock_symbol(stock_id)
     try:
         ticker = yf.Ticker(symbol)
         info = ticker.info
@@ -315,9 +317,8 @@ def valuation(stock_id: str):
 
 @app.get("/stock/{stock_id}/financials")
 def financials(stock_id: str):
-    from utils.data import get_tw_stock_symbol
     import yfinance as yf
-    symbol = get_tw_stock_symbol(stock_id)
+    symbol, _ = get_tw_stock_symbol(stock_id)
     try:
         ticker = yf.Ticker(symbol)
 
@@ -374,9 +375,8 @@ def revenue(stock_id: str):
         url = f"https://www.twse.com.tw/rwd/zh/afterTrading/BWIBBU_d?date=&selectType=ALL&response=json"
         
         # 用 yfinance 的季度營收做替代
-        from utils.data import get_tw_stock_symbol
         import yfinance as yf
-        symbol = get_tw_stock_symbol(stock_id)
+        symbol, _ = get_tw_stock_symbol(stock_id)
         ticker = yf.Ticker(symbol)
 
         quarterly = ticker.quarterly_financials
