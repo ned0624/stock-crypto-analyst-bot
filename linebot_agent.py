@@ -101,27 +101,8 @@ def fetch_url(url: str, timeout: int = 15) -> dict:
         return {"error": str(e)}
 
 def fetch_all_stock(stock_id: str) -> dict:
-    urls = {
-        "info":               f"{STOCK_API_BASE}/stock/{stock_id}",
-        "signal":             f"{STOCK_API_BASE}/stock/{stock_id}/signal",
-        "chip":               f"{STOCK_API_BASE}/stock/{stock_id}/chip",
-        "technical":          f"{STOCK_API_BASE}/stock/{stock_id}/technical",
-        "margin":             f"{STOCK_API_BASE}/stock/{stock_id}/margin",
-        "valuation":          f"{STOCK_API_BASE}/stock/{stock_id}/valuation",
-        "support_resistance": f"{STOCK_API_BASE}/stock/{stock_id}/support_resistance",
-        "volume":             f"{STOCK_API_BASE}/stock/{stock_id}/volume_analysis",
-        "financials":         f"{STOCK_API_BASE}/stock/{stock_id}/financials",
-    }
-    results = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=9) as executor:
-        futures = {executor.submit(fetch_url, url, 10): key for key, url in urls.items()}
-        for future in concurrent.futures.as_completed(futures):
-            key = futures[future]
-            try:
-                results[key] = future.result()
-            except Exception as e:
-                results[key] = {"error": str(e)}
-    return results
+    # 單一 request：API server 內部解析 symbol/market 一次後並行取所有資料
+    return fetch_url(f"{STOCK_API_BASE}/stock/{stock_id}/all", timeout=35)
 
 def fetch_all_us_stock(symbol: str) -> dict:
     urls = {

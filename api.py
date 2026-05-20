@@ -1,3 +1,5 @@
+import concurrent.futures
+import math
 import numpy as np
 import requests
 from datetime import datetime, timedelta
@@ -408,6 +410,212 @@ def revenue(stock_id: str):
         return JSONResponse({"revenue_history": revenue_data})
     except Exception as e:
         return JSONResponse({"error": str(e)})
+
+# ── 台股聚合 helpers ──────────────────────────────────────────────────────────
+
+def _safe_float(v):
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        return None if (math.isnan(f) or math.isinf(f)) else f
+    except Exception:
+        return None
+
+def _calc_technical(stock_id: str) -> dict:
+    df = get_stock_history(stock_id, period="6mo")
+    if df.empty:
+        return {"error": "無法取得資料"}
+    df = get_technical_indicators(df)
+    latest = df.iloc[-1]
+    return {
+        "RSI":         latest.get("RSI"),
+        "MACD":        latest.get("MACD"),
+        "MACD_signal": latest.get("MACD_signal"),
+        "K":           latest.get("K"),
+        "D":           latest.get("D"),
+        "MA5":         latest.get("MA5"),
+        "MA20":        latest.get("MA20"),
+        "MA60":        latest.get("MA60"),
+    }
+
+def _calc_signal(stock_id: str) -> dict:
+    info = get_stock_info(stock_id)
+    if "error" in info:
+        return info
+    df = get_stock_history(stock_id, period="6mo")
+    df = get_technical_indicators(df)
+    return analyze_signals(df, info)
+
+def _calc_support_resistance(stock_id: str) -> dict:
+    try:
+        df = get_stock_history(stock_id, period="3mo")
+        if df.empty:
+            return {"error": "無法取得資料"}
+        df = get_technical_indicators(df)
+        close, high, low = df["Close"], df["High"], df["Low"]
+        period_high = _safe_float(high.rolling(20).max().iloc[-1])
+        period_low  = _safe_float(low.rolling(20).min().iloc[-1])
+        bb_upper = _safe_float(df["BB_upper"].iloc[-1]) if "BB_upper" in df.columns else None
+        bb_lower = _safe_float(df["BB_lower"].iloc[-1]) if "BB_lower" in df.columns else None
+        df_1y = get_stock_history(stock_id, period="1y")
+        week52_high = _safe_float(df_1y["High"].max()) if not df_1y.empty else None
+        week52_low  = _safe_float(df_1y["Low"].min())  if not df_1y.empty else None
+        ma20 = _safe_float(df["MA20"].iloc[-1]) if "MA20" in df.columns else None
+        ma60 = _safe_float(df["MA60"].iloc[-1]) if "MA60" in df.columns else None
+        return {
+            "current_price": float(close.iloc[-1]),
+            "resistance":    {"r1": period_high, "r2": bb_upper, "r3": week52_high},
+            "support":       {"s1": period_low,  "s2": bb_lower, "s3": week52_low},
+            "ma_reference":  {"ma20": ma20, "ma60": ma60},
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def _calc_volume(stock_id: str) -> dict:
+    try:
+        df = get_stock_history(stock_id, period="3mo")
+        if df.empty:
+            return {"error": "無法取得資料"}
+        vol, close = df["Volume"], df["Close"]
+        latest_vol  = _safe_float(vol.iloc[-1])
+        avg_vol_5   = _safe_float(vol.rolling(5).mean().iloc[-1])
+        avg_vol_20  = _safe_float(vol.rolling(20).mean().iloc[-1])
+        avg_vol_60  = _safe_float(vol.rolling(60).mean().iloc[-1])
+        vol_ratio_5  = _safe_float(latest_vol / avg_vol_5)  if avg_vol_5  else 0
+        vol_ratio_20 = _safe_float(latest_vol / avg_vol_20) if avg_vol_20 else 0
+        surge_days = int((df.tail(5)["Volume"] > (avg_vol_20 or 0) * 1.5).sum())
+        price_change = _safe_float(close.pct_change().iloc[-1]) or 0
+        if   price_change > 0 and (vol_ratio_20 or 0) > 1.2: pv = "價漲量增（強勢）"
+        elif price_change > 0 and (vol_ratio_20 or 0) < 0.8: pv = "價漲量縮（注意）"
+        elif price_change < 0 and (vol_ratio_20 or 0) > 1.2: pv = "價跌量增（弱勢）"
+        elif price_change < 0 and (vol_ratio_20 or 0) < 0.8: pv = "價跌量縮（整理）"
+        else:                                                  pv = "量價平穩"
+        recent = df.tail(10)
+        up = down = 0
+        for i in range(len(recent) - 1, -1, -1):
+            if recent["Close"].iloc[i] >= recent["Open"].iloc[i]: up += 1
+            else: break
+        for i in range(len(recent) - 1, -1, -1):
+            if recent["Close"].iloc[i] < recent["Open"].iloc[i]: down += 1
+            else: break
+        return {
+            "latest_volume": latest_vol,
+            "avg_volume": {"ma5": avg_vol_5, "ma20": avg_vol_20, "ma60": avg_vol_60},
+            "vol_ratio": {
+                "vs_ma5":  round(vol_ratio_5,  2) if vol_ratio_5  else None,
+                "vs_ma20": round(vol_ratio_20, 2) if vol_ratio_20 else None,
+            },
+            "surge_days_5": surge_days,
+            "price_volume_relation": pv,
+            "consecutive_up_days":   up,
+            "consecutive_down_days": down,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def _calc_valuation(symbol: str) -> dict:
+    import yfinance as yf
+    try:
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+        hist = ticker.history(period="1y")
+        current_price = float(hist["Close"].iloc[-1]) if not hist.empty else None
+        eps           = info.get("trailingEps")
+        dividend_yield = info.get("dividendYield")
+        payout_ratio   = info.get("payoutRatio")
+        roe            = info.get("returnOnEquity")
+        roa            = info.get("returnOnAssets")
+        profit_margin  = info.get("profitMargins")
+        revenue_growth = info.get("revenueGrowth")
+        earnings_growth = info.get("earningsGrowth")
+        pe_high = round(float(hist["High"].max()) / eps, 2) if (not hist.empty and eps) else None
+        pe_low  = round(float(hist["Low"].min())  / eps, 2) if (not hist.empty and eps) else None
+        return {
+            "current_price":        current_price,
+            "eps":                  eps,
+            "pe_ratio":             info.get("trailingPE"),
+            "pe_52w_range":         {"high": pe_high, "low": pe_low},
+            "pb_ratio":             info.get("priceToBook"),
+            "ps_ratio":             info.get("priceToSalesTrailing12Months"),
+            "book_value_per_share": info.get("bookValue"),
+            "dividend_yield":       round(dividend_yield  * 100, 2) if dividend_yield  else None,
+            "payout_ratio":         round(payout_ratio    * 100, 2) if payout_ratio    else None,
+            "roe":                  round(roe             * 100, 2) if roe             else None,
+            "roa":                  round(roa             * 100, 2) if roa             else None,
+            "profit_margin":        round(profit_margin   * 100, 2) if profit_margin   else None,
+            "revenue_growth_yoy":   round(revenue_growth  * 100, 2) if revenue_growth  else None,
+            "earnings_growth_yoy":  round(earnings_growth * 100, 2) if earnings_growth else None,
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+def _calc_financials(symbol: str) -> dict:
+    import yfinance as yf
+    try:
+        ticker = yf.Ticker(symbol)
+
+        def _parse_income(df, cols):
+            rows = []
+            for col in cols:
+                rows.append({
+                    "period":           str(col)[:10],
+                    "revenue":          clean(df.loc["Total Revenue",    col]) if "Total Revenue"    in df.index else None,
+                    "gross_profit":     clean(df.loc["Gross Profit",     col]) if "Gross Profit"     in df.index else None,
+                    "operating_income": clean(df.loc["Operating Income", col]) if "Operating Income" in df.index else None,
+                    "net_income":       clean(df.loc["Net Income",       col]) if "Net Income"       in df.index else None,
+                })
+            return rows
+
+        q = ticker.quarterly_financials
+        a = ticker.financials
+        quarterly_income = _parse_income(q, q.columns[:4]) if q is not None and not q.empty else []
+        annual_income    = _parse_income(a, a.columns[:3]) if a is not None and not a.empty else []
+
+        eps_data = []
+        qeps = ticker.quarterly_earnings
+        if qeps is not None and not qeps.empty:
+            for idx, row in qeps.head(4).iterrows():
+                eps_data.append({
+                    "period":        str(idx),
+                    "actual_eps":    clean(row.get("Earnings")),
+                    "estimated_eps": clean(row.get("Estimate")),
+                })
+        return {"quarterly": quarterly_income, "annual": annual_income, "eps_history": eps_data}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@app.get("/stock/{stock_id}/all")
+def stock_all(stock_id: str):
+    """一次取得台股所有資料（單一 request，內部並行）"""
+    # 先解析 symbol/market 並暖 cache，後續所有函式呼叫 get_tw_stock_symbol 都走快取
+    symbol, market = get_tw_stock_symbol(stock_id)
+
+    tasks = {
+        "info":               lambda: clean(get_stock_info(stock_id)),
+        "chip":               lambda: clean(get_twse_chip_data(stock_id, market)),
+        "margin":             lambda: clean(get_margin_trading(stock_id, market)),
+        "technical":          lambda: clean(_calc_technical(stock_id)),
+        "signal":             lambda: clean(_calc_signal(stock_id)),
+        "support_resistance": lambda: clean(_calc_support_resistance(stock_id)),
+        "volume":             lambda: clean(_calc_volume(stock_id)),
+        "valuation":          lambda: clean(_calc_valuation(symbol)),
+        "financials":         lambda: clean(_calc_financials(symbol)),
+    }
+
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=9) as executor:
+        futures = {executor.submit(fn): key for key, fn in tasks.items()}
+        for future in concurrent.futures.as_completed(futures):
+            key = futures[future]
+            try:
+                results[key] = future.result()
+            except Exception as e:
+                results[key] = {"error": str(e)}
+
+    return JSONResponse(results)
+
 
 # ── Crypto Endpoints ──────────────────────────────────────────────────────────
 

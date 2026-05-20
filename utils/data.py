@@ -2,41 +2,47 @@ import yfinance as yf
 import requests
 import pandas as pd
 import ta
+import threading
 from datetime import datetime, timedelta
 import warnings
 warnings.filterwarnings("ignore")
 
 _symbol_cache: dict = {}
+_symbol_cache_lock = threading.Lock()
 
 def get_tw_stock_symbol(stock_id: str) -> tuple:
     """回傳 (symbol, market)，market 為 'TW' 或 'TWO'"""
     stock_id = stock_id.strip()
-    
+
     # 已有 suffix 的情況
     if stock_id.endswith(".TWO"):
         return stock_id, "TWO"
     if stock_id.endswith(".TW"):
         return stock_id, "TW"
-    
-    # 查快取
+
+    # 查快取（無鎖快速路徑）
     if stock_id in _symbol_cache:
         return _symbol_cache[stock_id]
-    
-    # 試探 .TW 和 .TWO
-    for suffix, market in [(".TW", "TW"), (".TWO", "TWO")]:
-        symbol = f"{stock_id}{suffix}"
-        try:
-            hist = yf.Ticker(symbol).history(period="2d")
-            if not hist.empty:
-                _symbol_cache[stock_id] = (symbol, market)
-                return symbol, market
-        except Exception:
-            continue
-    
-    # fallback
-    result = (f"{stock_id}.TW", "TW")
-    _symbol_cache[stock_id] = result
-    return result
+
+    # 加鎖，避免多執行緒同時呼叫 yfinance
+    with _symbol_cache_lock:
+        if stock_id in _symbol_cache:
+            return _symbol_cache[stock_id]
+
+        for suffix, market in [(".TW", "TW"), (".TWO", "TWO")]:
+            symbol = f"{stock_id}{suffix}"
+            try:
+                hist = yf.Ticker(symbol).history(period="2d")
+                if not hist.empty:
+                    result = (symbol, market)
+                    _symbol_cache[stock_id] = result
+                    return result
+            except Exception:
+                continue
+
+        result = (f"{stock_id}.TW", "TW")
+        _symbol_cache[stock_id] = result
+        return result
 
 
 def get_stock_info(stock_id: str) -> dict:
@@ -175,7 +181,7 @@ def get_twse_chip_data(stock_id: str, market: str = "TW") -> dict:
                 rows = data["data"]
 
             for row in rows:
-                if row[0] == stock_id:
+                if str(row[0]).strip() == stock_id:
                     try:
                         if market == "TWO":
                             def to_int_tpex(s):
@@ -226,14 +232,17 @@ def get_margin_trading(stock_id: str, market: str = "TW") -> dict:
                     continue
             else:
                 url = f"https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN?date={date_str}&selectType=ALL&response=json"
-                resp = requests.get(url, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+                resp = requests.get(url, timeout=20, headers={"User-Agent": "Mozilla/5.0"})
                 data = resp.json()
-                if data.get("stat") != "OK" or not data.get("data"):
+                tables = data.get("tables", [])
+                # tables[0]=信用交易統計彙總, tables[1]=每支股票融資融券明細
+                rows = tables[1].get("data", []) if len(tables) > 1 else []
+                print(f"[margin] {date_str} stat={data.get('stat')} rows={len(rows)}")
+                if data.get("stat") != "OK" or not rows:
                     continue
-                rows = data["data"]
 
             for row in rows:
-                if row[0] == stock_id:
+                if str(row[0]).strip() == stock_id:
                     if market == "TWO":
                         return {
                             "date": date_str,
@@ -245,14 +254,15 @@ def get_margin_trading(stock_id: str, market: str = "TW") -> dict:
                             "short_balance":  int(str(row[14]).replace(",", "")),
                         }
                     else:
+                        # 新格式 fields: [代號,名稱,融資買進,融資賣出,現金償還,前日餘額,今日餘額,限額,融券買進,融券賣出,現券償還,前日餘額,今日餘額,限額,資券互抵,註記]
                         return {
                             "date": date_str,
-                            "margin_buy":     int(row[3].replace(",", "")),
-                            "margin_sell":    int(row[4].replace(",", "")),
-                            "margin_balance": int(row[6].replace(",", "")),
-                            "short_sell":     int(row[9].replace(",", "")),
-                            "short_buy":      int(row[10].replace(",", "")),
-                            "short_balance":  int(row[12].replace(",", "")),
+                            "margin_buy":     int(str(row[2]).replace(",", "")),
+                            "margin_sell":    int(str(row[3]).replace(",", "")),
+                            "margin_balance": int(str(row[6]).replace(",", "")),
+                            "short_sell":     int(str(row[9]).replace(",", "")),
+                            "short_buy":      int(str(row[8]).replace(",", "")),
+                            "short_balance":  int(str(row[12]).replace(",", "")),
                         }
 
         return {}
